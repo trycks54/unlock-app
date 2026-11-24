@@ -82,7 +82,7 @@
   }
   .key, .action {
     position: relative;
-    --key-release-easing: cubic-bezier(.22, 1.75, .45, 1);
+    --key-release-easing: linear(0, .52 16%, 1.28 39%, .93 65%, 1.02 84%, 1);
     -webkit-tap-highlight-color: transparent;
     transition: background-color 210ms ease-out;
   }
@@ -111,9 +111,9 @@
     }
     .phone:not([hidden]) > .keypad { animation-delay: 45ms; }
     .key, .action {
-      transition: background-color 210ms ease-out, transform 320ms var(--key-release-easing);
+      transition: background-color 210ms ease-out, transform 380ms var(--key-release-easing);
     }
-    .key:active, .action:active { transform: scale(.9); transition-duration: 0ms; }
+    .key:active, .action:active { transform: scale(.88); transition-duration: 0ms; }
   }
   @keyframes passcode-enter {
     0% { opacity: 0; transform: translateY(22px) scale(.94); }
@@ -287,11 +287,11 @@
       const style = getComputedStyle(button);
       const released = { backgroundColor: style.backgroundColor };
       if (!reducedMotion.matches) {
-        pressed.transform = 'scale(.9)';
+        pressed.transform = 'scale(.88)';
         released.transform = 'scale(1)';
       }
       pressAnimations.set(button, button.animate([pressed, released], {
-        duration: reducedMotion.matches ? 90 : 320,
+        duration: reducedMotion.matches ? 90 : 380,
         easing: reducedMotion.matches ? 'ease-out' : style.getPropertyValue('--key-release-easing').trim()
       }));
     });
