@@ -127,6 +127,9 @@
   .action { border: 0; background: none; font-size: .8125rem; min-height: 44px; padding: 0; }
   .action:hover { text-decoration: underline; }
   .backspace { font-size: 1.35rem; }
+  .haptics-check { max-width: 32ch; text-align: center; }
+  .haptics-check button { min-height: 44px; padding: 0 14px; }
+  .haptics-check output { display: block; margin-top: 8px; font-size: .875rem; }
   .phone[hidden], .home-screen[hidden] { display: none; }
   .home-screen {
     position: relative;
@@ -191,6 +194,10 @@
     <button class="key zero" data-digit aria-label="0"><span class="digit">0</span></button>
     <button class="action" id="reset">Reset</button>
     <button class="action backspace" id="backspace" aria-label="Delete last digit">⌫</button>
+  </div>
+  <div class="haptics-check" hidden>
+    <button class="action" type="button">Test heavy haptic</button>
+    <output role="status"></output>
   </div>
 </main>
 <section class="home-screen" aria-label="Home Screen reveal" hidden>
@@ -277,12 +284,34 @@
       prepareKeyHaptics();
       try {
         await aura.haptic('impact', { style: 'heavy', intensity: 1 });
-        return;
+        return 'Aura accepted the heavy impact. Did you feel a tap?';
       } catch (error) {
         console.warn('Aura keypad haptics unavailable:', error);
+        navigator.vibrate?.(30);
+        return 'Aura rejected the request. Reopen the HTTPS bookmark in Aura Browser.';
       }
     }
-    navigator.vibrate?.(30);
+    return navigator.vibrate?.(30)
+      ? 'Standard vibration requested. The Aura bridge is unavailable.'
+      : 'Aura bridge unavailable. Bookmark this page in Aura Browser, then reopen it there.';
+  }
+
+  if (new URLSearchParams(location.search).get('haptics') === 'check') {
+    const check = document.querySelector('.haptics-check');
+    const output = check.querySelector('output');
+    const test = check.querySelector('button');
+    check.hidden = false;
+    test.addEventListener('click', async () => {
+      test.disabled = true;
+      output.textContent = 'Requesting heavy impact…';
+      try {
+        output.textContent = await playKeyHaptic();
+      } catch {
+        output.textContent = 'Haptic request unavailable in this browser.';
+      } finally {
+        test.disabled = false;
+      }
+    });
   }
 
   function bindKey(button, key, action) {
