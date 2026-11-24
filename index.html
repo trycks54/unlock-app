@@ -169,6 +169,42 @@
     background: #111216e6;
     color: white;
   }
+  .sharing-dot {
+    position: fixed;
+    z-index: 2;
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 50%;
+    background: #111216bb;
+  }
+  .sharing-dot::after {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 10px;
+    margin: auto;
+    border-radius: 50%;
+    background: #7df0bb;
+  }
+  .peek-dialog {
+    width: min(360px, 90vw);
+    padding: 20px;
+    color: white;
+    background: #20212a;
+    border: 1px solid #fff4;
+    border-radius: 20px;
+  }
+  .peek-dialog::backdrop { background: #0009; }
+  .peek-dialog form { display: grid; gap: 8px; margin: 16px 0; }
+  .peek-dialog input, .peek-dialog button { min-height: 44px; }
+  .peek-dialog output { display: block; margin: 12px 0; }
+  .peek-taps { font-size: 1.5rem; overflow-wrap: anywhere; }
+  #peek-open { min-height: 44px; border: 0; background: none; }
+  .sharing-notice { max-width: 30ch; text-align: center; font-size: .875rem; }
+  #reset { -webkit-touch-callout: none; user-select: none; }
 </style>
 </head>
 <body>
@@ -199,7 +235,23 @@
     <button class="action" type="button">Test heavy haptic</button>
     <output role="status"></output>
   </div>
+  <button id="peek-open" type="button">Pair with Phone 2</button>
+  <p class="sharing-notice" hidden>Demo only. Digits are sent to Phone 2. Use made-up numbers.</p>
 </main>
+<button class="sharing-dot" type="button" aria-label="Stop sharing demo keypad taps" hidden></button>
+<dialog class="peek-dialog" aria-labelledby="peek-title">
+  <h2 id="peek-title">Peek Mode</h2>
+  <p>Use made-up numbers only. While sharing is on, every number pressed on Phone 1 is sent to Phone 2.</p>
+  <button id="peek-host" type="button">Start sharing keypad taps</button>
+  <form id="peek-join">
+    <label for="peek-room">Pairing code from Phone 1</label>
+    <input id="peek-room" required pattern="[a-fA-F0-9]{12}" maxlength="12" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button type="submit">Join as Phone 2</button>
+  </form>
+  <output class="peek-status" role="status"></output>
+  <output class="peek-taps" aria-label="Latest demo keypad taps"></output>
+  <button id="peek-close" type="button">Close</button>
+</dialog>
 <section class="home-screen" aria-label="Home Screen reveal" hidden>
   <h1 class="unlocked-title">Unlocked</h1>
   <button class="home-replay" type="button">Replay</button>
@@ -251,7 +303,7 @@
   function reset() {
     if (attempts === unlockAttempt) {
       attempts = 0;
-      title.textContent = 'Enter Passcode';
+      title.textContent = sharingDot.hidden ? 'Enter Passcode' : 'Demo keypad';
       home.hidden = true;
       phone.hidden = false;
       document.querySelector('[data-digit]').focus({ preventScroll: true });
@@ -314,6 +366,157 @@
     });
   }
 
+  const peek = document.querySelector('.peek-dialog');
+  const peekOpen = document.querySelector('#peek-open');
+  const peekHost = document.querySelector('#peek-host');
+  const peekJoin = document.querySelector('#peek-join');
+  const peekStatus = document.querySelector('.peek-status');
+  const peekTaps = document.querySelector('.peek-taps');
+  const sharingDot = document.querySelector('.sharing-dot');
+  const sharingNotice = document.querySelector('.sharing-notice');
+  const resetKey = document.querySelector('#reset');
+  let link;
+  let session;
+  let holdTimer;
+  let resetHeld = false;
+  let kitLoad;
+
+  function loadAuraKit() {
+    if (!kitLoad) {
+      kitLoad = import('https://cdn.jsdelivr.net/gh/splitter77/aura_framework@0d6c80d44e6a5ea886c4356119bf80313e99b517/aurakit.js')
+        .then(() => window.AuraKit)
+        .catch(error => { kitLoad = undefined; throw error; });
+    }
+    return kitLoad;
+  }
+
+  function showSharing(active) {
+    sharingDot.hidden = !active;
+    sharingNotice.hidden = !active;
+    peekOpen.hidden = active;
+    if (!phone.hidden) title.textContent = active ? 'Demo keypad' : 'Enter Passcode';
+  }
+
+  async function stopPeek() {
+    const current = session;
+    if (!current || current.stopping) return;
+    current.stopping = true;
+    showSharing(false);
+    peekTaps.textContent = '';
+    peekStatus.textContent = 'Sharing stopped.';
+    current.off.forEach(off => off());
+    try {
+      if (link) await link.stop();
+    } catch (error) {
+      console.warn('AuraKit link stop failed:', error);
+    } finally {
+      session = undefined;
+      peekHost.disabled = false;
+      peekJoin.querySelector('button').disabled = false;
+    }
+  }
+
+  async function startPeek(role, room) {
+    if (session) return;
+    const current = { role, peer: undefined, off: [], stopping: false };
+    session = current;
+    peekHost.disabled = true;
+    peekJoin.querySelector('button').disabled = true;
+    peekTaps.textContent = '';
+    const pairing = role === 'host' ? 'Pairing code: ' + room : 'Looking for Phone 1…';
+    peekStatus.textContent = pairing;
+    try {
+      const kit = await loadAuraKit();
+      const env = await kit.ready();
+      if (session !== current || current.stopping) return;
+      if (!env.available || env.caps?.peer === false) {
+        throw new Error('Open both phones from a bookmarked HTTPS page in Aura Browser.');
+      }
+      if (!link) {
+        link = kit.link({ role, room, autoStart: false, urlParams: false, rememberRoom: false });
+      } else {
+        // AuraKit keeps one Link per page. Configure the stopped link for this session.
+        link.wantedRole = role;
+        link.room = room;
+      }
+      current.off.push(link.on('status', (status, error) => {
+        if (status === 'error' || status === 'unavailable') {
+          peekStatus.textContent = pairing + ' ' + (error || 'Bluetooth is unavailable.');
+        }
+      }));
+      current.off.push(link.onSync(({ peer }) => {
+        if (typeof peer !== 'string' || !link.peers.has(peer) || current.peer) return;
+        current.peer = peer;
+        peekStatus.textContent = role === 'host' ? 'Sharing demo taps.' : 'Connected to Phone 1.';
+        if (role === 'host') {
+          showSharing(true);
+          peek.close();
+        }
+      }));
+      current.off.push(link.on('disconnect', ({ id }) => {
+        if (current.peer === id) void stopPeek();
+      }));
+      if (role === 'guest') {
+        current.off.push(link.onMessage('unlock-demo-tap', (digit, from) => {
+          if (current.peer === from && typeof digit === 'string' && /^[0-9]$/.test(digit)) {
+            peekTaps.textContent = (peekTaps.textContent + digit).slice(-24);
+          }
+        }));
+      }
+      await link.start();
+    } catch (error) {
+      if (session !== current || current.stopping) return;
+      await stopPeek();
+      peekStatus.textContent = error.message || 'AuraKit could not start.';
+    }
+  }
+
+  function shareDemoTap(digit) {
+    const current = session;
+    if (!current || current.stopping || current.role !== 'host' ||
+        !current.peer || sharingDot.hidden || !link.connected) return;
+    link.send('unlock-demo-tap', digit, { to: current.peer }).then(sent => {
+      if (!sent && session === current) void stopPeek();
+    }).catch(() => {
+      if (session === current) void stopPeek();
+    });
+  }
+
+  function openPeek() {
+    if (!peek.open && sharingDot.hidden) peek.showModal();
+  }
+
+  peekOpen.addEventListener('click', openPeek);
+  peekHost.addEventListener('click', () => {
+    const room = Array.from(crypto.getRandomValues(new Uint8Array(6)),
+      byte => byte.toString(16).padStart(2, '0')).join('');
+    void startPeek('host', room);
+  });
+  peekJoin.addEventListener('submit', event => {
+    event.preventDefault();
+    void startPeek('guest', document.querySelector('#peek-room').value.toLowerCase());
+  });
+  document.querySelector('#peek-close').addEventListener('click', () => peek.close());
+  peek.addEventListener('close', () => {
+    if (sharingDot.hidden) void stopPeek();
+  });
+  sharingDot.addEventListener('click', () => {
+    void stopPeek();
+    (phone.hidden ? replay : peekOpen).focus({ preventScroll: true });
+  });
+  resetKey.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    resetHeld = false;
+    holdTimer = setTimeout(() => {
+      resetHeld = sharingDot.hidden;
+      if (resetHeld) openPeek();
+    }, 650);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => {
+    resetKey.addEventListener(type, () => clearTimeout(holdTimer));
+  });
+  resetKey.addEventListener('contextmenu', event => event.preventDefault());
+
   function bindKey(button, key, action) {
     keypadButtons.set(key, button);
     const light = document.createElement('span');
@@ -357,13 +560,22 @@
   }
 
   document.querySelectorAll('[data-digit]').forEach(button => {
-    bindKey(button, button.getAttribute('aria-label'), enterDigit);
+    const digit = button.getAttribute('aria-label');
+    bindKey(button, digit, () => {
+      shareDemoTap(digit);
+      enterDigit();
+    });
   });
   bindKey(document.querySelector('#backspace'), 'Backspace', backspace);
-  bindKey(document.querySelector('#reset'), 'Escape', reset);
+  resetKey.addEventListener('click', event => {
+    if (!resetHeld || event.detail === 0) return;
+    resetHeld = false;
+    event.stopImmediatePropagation();
+  });
+  bindKey(resetKey, 'Escape', reset);
   replay.addEventListener('click', reset);
   document.addEventListener('keydown', event => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (peek.open || event.altKey || event.ctrlKey || event.metaKey) return;
     if (!home.hidden) {
       if (event.key === 'Escape') reset();
       return;
