@@ -202,13 +202,29 @@
   .peek-dialog input, .peek-dialog button { min-height: 44px; }
   .peek-dialog output { display: block; margin: 12px 0; }
   .peek-taps { font-size: 1.5rem; overflow-wrap: anywhere; }
-  #peek-open { min-height: 44px; border: 0; background: none; }
+  #peek-open {
+    position: absolute;
+    z-index: 1;
+    top: max(10px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid #fff5;
+    border-radius: 22px;
+    background: #181921;
+    white-space: nowrap;
+  }
+  .phone:has(#peek-open:not([hidden])) {
+    padding-top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+  }
   .sharing-notice { max-width: 30ch; text-align: center; font-size: .875rem; }
   #reset { -webkit-touch-callout: none; user-select: none; }
 </style>
 </head>
 <body>
 <main class="phone" aria-labelledby="passcode-title">
+  <button id="peek-open" type="button">Pair with Phone 2</button>
   <div class="prompt">
     <h1 id="passcode-title">Enter Passcode</h1>
     <div class="dots" aria-hidden="true">
@@ -235,7 +251,6 @@
     <button class="action" type="button">Test heavy haptic</button>
     <output role="status"></output>
   </div>
-  <button id="peek-open" type="button">Pair with Phone 2</button>
   <p class="sharing-notice" hidden>Demo only. Digits are sent to Phone 2. Use made-up numbers.</p>
 </main>
 <button class="sharing-dot" type="button" aria-label="Stop sharing demo keypad taps" hidden></button>
