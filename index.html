@@ -257,18 +257,32 @@
   const pressAnimations = new WeakMap();
   const keypadButtons = new Map();
 
-  function playKeyHaptic() {
+  let preparedAura;
+
+  function prepareKeyHaptics() {
+    const aura = window.Aura;
+    if (aura === preparedAura || typeof aura?.prepareHaptics !== 'function') return;
+    preparedAura = aura;
     try {
-      const aura = window.Aura;
-      if (typeof aura?.haptic === 'function') {
-        // Aura Browser exposes this bridge on bookmarked HTTPS pages.
-        Promise.resolve(aura.haptic('impact', { style: 'light' })).catch(() => {});
-      } else {
-        navigator.vibrate?.(12);
-      }
+      Promise.resolve(aura.prepareHaptics()).catch(() => { preparedAura = undefined; });
     } catch {
-      // Feedback is optional when the browser blocks or lacks haptics.
+      preparedAura = undefined;
     }
+  }
+
+  // Mirrors AuraKit.haptics.heavy() and its 30ms vibration fallback.
+  async function playKeyHaptic() {
+    const aura = window.Aura;
+    if (typeof aura?.haptic === 'function') {
+      prepareKeyHaptics();
+      try {
+        await aura.haptic('impact', { style: 'heavy', intensity: 1 });
+        return;
+      } catch (error) {
+        console.warn('Aura keypad haptics unavailable:', error);
+      }
+    }
+    navigator.vibrate?.(30);
   }
 
   function bindKey(button, key, action) {
@@ -280,6 +294,7 @@
     let lightAnimation;
 
     button.addEventListener('pointerdown', event => {
+      prepareKeyHaptics();
       pressAnimations.get(button)?.cancel();
       lightAnimation?.cancel();
       const bounds = button.getBoundingClientRect();
