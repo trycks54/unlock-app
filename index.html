@@ -219,7 +219,16 @@
     padding-top: calc(max(10px, env(safe-area-inset-top)) + 56px);
   }
   .sharing-notice { max-width: 30ch; text-align: center; font-size: .875rem; }
-  #reset { -webkit-touch-callout: none; user-select: none; }
+  .phone, .peek-dialog, .home-screen {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #peek-room {
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
+  }
 </style>
 </head>
 <body>
