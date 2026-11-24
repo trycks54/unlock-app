@@ -227,7 +227,7 @@
 </head>
 <body>
 <main class="phone" aria-labelledby="passcode-title">
-  <button id="peek-open" type="button">Pair with Phone 2</button>
+  <button id="peek-open" type="button">Sharing settings</button>
   <div class="prompt">
     <h1 id="passcode-title">Enter Passcode</h1>
     <div class="dots" aria-hidden="true">
@@ -261,7 +261,6 @@
   <h2 id="peek-title">Peek Mode</h2>
   <p>Use made-up numbers only. While sharing is on, every number pressed on Phone 1 is sent to Phone 2.</p>
   <button id="peek-host" type="button">Start sharing keypad taps</button>
-  <button id="peek-share" type="button" hidden>Send join link</button>
   <output class="peek-status" role="status"></output>
   <output class="peek-taps" aria-label="Latest demo keypad taps"></output>
   <button id="peek-close" type="button">Close</button>
@@ -383,9 +382,7 @@
   const peek = document.querySelector('.peek-dialog');
   const peekOpen = document.querySelector('#peek-open');
   const peekHost = document.querySelector('#peek-host');
-  const peekShare = document.querySelector('#peek-share');
-  const inviteRoom = /^#join=([a-f0-9]{12})$/.exec(location.hash)?.[1];
-  peekHost.hidden = Boolean(inviteRoom);
+  let isAuraClip = false;
   const peekStatus = document.querySelector('.peek-status');
   const peekTaps = document.querySelector('.peek-taps');
   const sharingDot = document.querySelector('.sharing-dot');
@@ -418,7 +415,6 @@
     if (!current || current.stopping) return;
     current.stopping = true;
     showSharing(false);
-    peekShare.hidden = true;
     peekTaps.textContent = '';
     peekStatus.textContent = 'Sharing stopped.';
     current.off.forEach(off => off());
@@ -432,31 +428,27 @@
     }
   }
 
-  async function startPeek(role, room) {
+  async function startPeek(role) {
     if (session) return;
     const current = { role, peer: undefined, off: [], stopping: false };
     session = current;
     peekHost.disabled = true;
     peekTaps.textContent = '';
     const pairing = role === 'host'
-      ? 'Send the join link to Phone 2 and open it in Aura Browser.'
+      ? 'Waiting for Phone 2 to open your AuraClip…'
       : 'Looking for Phone 1…';
-    current.room = room;
     peekStatus.textContent = pairing;
     try {
       const kit = await loadAuraKit();
       const env = await kit.ready();
       if (session !== current || current.stopping) return;
       if (!env.available || env.caps?.peer === false) {
-        throw new Error('Open both phones from a bookmarked HTTPS page in Aura Browser.');
+        throw new Error('Use an Aura Browser bookmark on Phone 1 and your AuraClip on Phone 2.');
       }
-      if (!link) {
-        link = kit.link({ role, room, autoStart: false, urlParams: false, rememberRoom: false });
-      } else {
-        // AuraKit keeps one Link per page. Configure the stopped link for this session.
-        link.wantedRole = role;
-        link.room = room;
+      if (Boolean(env.appClip) !== (role === 'guest')) {
+        throw new Error('Start sharing in Aura Browser and receive taps in AuraClip.');
       }
+      link ??= kit.link({ role, autoStart: false, urlParams: false, rememberRoom: false });
       current.off.push(link.on('status', (status, error) => {
         if (status === 'error' || status === 'unavailable') {
           peekStatus.textContent = pairing + ' ' + (error || 'Bluetooth is unavailable.');
@@ -467,7 +459,6 @@
         current.peer = peer;
         peekStatus.textContent = role === 'host' ? 'Sharing demo taps.' : 'Connected to Phone 1.';
         if (role === 'host') {
-          peekShare.hidden = true;
           showSharing(true);
           peek.close();
         }
@@ -483,9 +474,6 @@
         }));
       }
       await link.start();
-      if (session === current && !current.stopping && role === 'host' && !current.peer) {
-        peekShare.hidden = false;
-      }
     } catch (error) {
       if (session !== current || current.stopping) return;
       await stopPeek();
@@ -507,36 +495,12 @@
   function openPeek() {
     if (!peek.open && sharingDot.hidden) {
       peek.showModal();
-      if (inviteRoom) void startPeek('guest', inviteRoom);
+      if (isAuraClip) void startPeek('guest');
     }
   }
 
   peekOpen.addEventListener('click', openPeek);
-  if (inviteRoom) peekOpen.textContent = 'Join Phone 1';
-  peekHost.addEventListener('click', () => {
-    const room = Array.from(crypto.getRandomValues(new Uint8Array(6)),
-      byte => byte.toString(16).padStart(2, '0')).join('');
-    void startPeek('host', room);
-  });
-  peekShare.addEventListener('click', async () => {
-    const current = session;
-    if (!current || current.stopping || current.role !== 'host') return;
-    const invite = new URL(location.href);
-    invite.search = '';
-    invite.hash = 'join=' + current.room;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Unlock App join link', url: invite.href });
-      } else {
-        await navigator.clipboard.writeText(invite.href);
-        if (session === current && !current.peer) peekStatus.textContent = 'Link copied. Open it on Phone 2 in Aura Browser.';
-      }
-    } catch (error) {
-      if (error.name !== 'AbortError' && session === current && !current.peer) {
-        peekStatus.textContent = 'Could not share the link. Try again in Aura Browser.';
-      }
-    }
-  });
+  peekHost.addEventListener('click', () => void startPeek('host'));
   document.querySelector('#peek-close').addEventListener('click', () => peek.close());
   peek.addEventListener('close', () => {
     if (sharingDot.hidden) void stopPeek();
@@ -626,7 +590,16 @@
     event.preventDefault();
     button.click();
   });
-  if (inviteRoom) openPeek();
+  if (window.Aura) {
+    loadAuraKit().then(kit => kit.ready()).then(env => {
+      if (!env.available || !env.appClip) return;
+      isAuraClip = true;
+      peekHost.hidden = true;
+      peekOpen.textContent = 'Open Peek Mode';
+      if (peek.open) void startPeek('guest');
+      else openPeek();
+    }).catch(error => console.warn('AuraKit automatic connection unavailable:', error));
+  }
 </script>
 </body>
 </html>
