@@ -257,6 +257,20 @@
   const pressAnimations = new WeakMap();
   const keypadButtons = new Map();
 
+  function playKeyHaptic() {
+    try {
+      const aura = window.Aura;
+      if (typeof aura?.haptic === 'function') {
+        // Aura Browser exposes this bridge on bookmarked HTTPS pages.
+        Promise.resolve(aura.haptic('impact', { style: 'light' })).catch(() => {});
+      } else {
+        navigator.vibrate?.(12);
+      }
+    } catch {
+      // Feedback is optional when the browser blocks or lacks haptics.
+    }
+  }
+
   function bindKey(button, key, action) {
     keypadButtons.set(key, button);
     const light = document.createElement('span');
@@ -273,6 +287,7 @@
       light.style.setProperty('--light-y', (event.clientY - bounds.top) / bounds.height * 100 + '%');
     });
     button.addEventListener('click', event => {
+      playKeyHaptic();
       action();
       if (event.detail !== 0) return;
       lightAnimation?.cancel();
