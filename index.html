@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111216">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Passcode</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: #eae2d6;
+    background: #111216;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .phone {
+    position: relative; color: white;
+    isolation: isolate;
+    background:
+      radial-gradient(ellipse at 92% 18%, #555d70 0%, transparent 48%),
+      radial-gradient(ellipse at 12% 74%, #62432e 0%, transparent 55%),
+      #111216;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 24px;
+    padding: max(24px, env(safe-area-inset-top))
+      max(24px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom))
+      max(24px, env(safe-area-inset-left));
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(24px, 7.5dvh, 76px);
+  }
+  .phone::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(151deg, #fff3, #fff1 25%, transparent 44%, #fff0 76%, #c0cdff21);
+  }
+  .prompt { text-align: center; }
+  h1 { font-size: 1.375rem; font-weight: 500; margin: 0 0 clamp(20px, 5.5dvh, 58px); }
+  .dots { display: flex; gap: clamp(20px, 5.5vw, 28px); justify-content: center; }
+  .dot { width: 12px; height: 12px; border: 1px solid #fff; border-radius: 50%; }
+  .dot.filled { background: #fff; }
+  .status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, clamp(52px, min(20vw, 9.5dvh), 96px)));
+    justify-content: center;
+    gap: clamp(10px, 2.1dvh, 22px) clamp(14px, 5.5vw, 27px);
+    width: 100%;
+  }
+  .keypad .action { grid-row: 5; margin-top: clamp(12px, 7dvh, 70px); }
+  .keypad #reset { grid-column: 1; }
+  .keypad #backspace { grid-column: 3; }
+  button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+  button:focus-visible { outline: 2px solid white; outline-offset: 3px; }
+  .key {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    aspect-ratio: 1; border: 1px solid #ffffff29; border-radius: 50%;
+    background-color: #e7d7c326;
+    background-image: radial-gradient(ellipse at 32% 4%, #ffffff2b, transparent 66%);
+    box-shadow: inset 0 1px 2px #ffffff30, inset 0 -2px 5px #0003, 0 3px 9px #0004;
+    text-shadow: 0 1px 2px #0007;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+  @media (hover: hover) {
+    .key:hover { background-color: #e7d7c33d; }
+  }
+  .key, .action {
+    position: relative;
+    --key-release-easing: cubic-bezier(.22, 1.75, .45, 1);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 210ms ease-out;
+  }
+  .key-light {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at var(--light-x, 50%) var(--light-y, 45%),
+      #fff9, #dce8ff38 28%, transparent 68%);
+    box-shadow: inset 0 0 0 1px #ecf2ff88, inset 0 1px 8px #fff4;
+    opacity: 0;
+    transition: opacity 300ms ease-out;
+  }
+  :is(.key, .action):active > .key-light {
+    opacity: 1;
+    transition-duration: 0ms;
+  }
+  .key:active, .action:active { transition-duration: 0ms; }
+  .key:active { background-color: #ffffff59; }
+  .action:active { background: #ffffff26; }
+  .action { border-radius: 18px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .phone:not([hidden]) > :is(.prompt, .keypad) {
+      animation: passcode-enter 480ms cubic-bezier(.25, .7, .35, 1) backwards;
+    }
+    .phone:not([hidden]) > .keypad { animation-delay: 45ms; }
+    .key, .action {
+      transition: background-color 210ms ease-out, transform 320ms var(--key-release-easing);
+    }
+    .key:active, .action:active { transform: scale(.9); transition-duration: 0ms; }
+  }
+  @keyframes passcode-enter {
+    0% { opacity: 0; transform: translateY(22px) scale(.94); }
+    55% { opacity: 1; transform: translateY(-5px) scale(1.025); }
+    80% { transform: translateY(2px) scale(.993); }
+    100% { opacity: 1; transform: none; }
+  }
+  .digit { font-size: 1.7rem; line-height: 1; font-weight: 400; }
+  .letters { font-size: .625rem; font-weight: 700; letter-spacing: .14em; margin-top: 4px; }
+  .zero { grid-column: 2; }
+  .action { border: 0; background: none; font-size: .8125rem; min-height: 44px; padding: 0; }
+  .action:hover { text-decoration: underline; }
+  .backspace { font-size: 1.35rem; }
+  .phone[hidden], .home-screen[hidden] { display: none; }
+  .home-screen {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: #111216;
+  }
+  .unlocked-title { margin: 0; color: white; font-size: 2rem; }
+  .home-screen { overflow: hidden; }
+  @media (prefers-reduced-motion: no-preference) {
+    .home-screen:not([hidden]) .unlocked-title {
+      animation: unlock-reveal 560ms cubic-bezier(.22, .7, .3, 1) both;
+    }
+    .home-screen:not([hidden]) .home-replay {
+      animation: replay-appear 180ms ease-out 380ms backwards;
+    }
+  }
+  @keyframes unlock-reveal {
+    0% { opacity: 0; transform: translateY(18px) scale(1.13); filter: blur(9px); }
+    66% { opacity: 1; transform: translateY(-2px) scale(.993); filter: blur(0); }
+    100% { opacity: 1; transform: none; filter: none; }
+  }
+  @keyframes replay-appear {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .home-replay {
+    position: absolute;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(12px, env(safe-area-inset-right));
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid #fff4;
+    border-radius: 22px;
+    background: #111216e6;
+    color: white;
+  }
+</style>
+</head>
+<body>
+<main class="phone" aria-labelledby="passcode-title">
+  <div class="prompt">
+    <h1 id="passcode-title">Enter Passcode</h1>
+    <div class="dots" aria-hidden="true">
+      <span class="dot"></span><span class="dot"></span>
+      <span class="dot"></span><span class="dot"></span>
+    </div>
+    <p class="status" role="status"></p>
+  </div>
+  <div class="keypad" role="group" aria-label="Passcode keypad">
+    <button class="key" data-digit aria-label="1"><span class="digit">1</span></button>
+    <button class="key" data-digit aria-label="2"><span class="digit">2</span><span class="letters">ABC</span></button>
+    <button class="key" data-digit aria-label="3"><span class="digit">3</span><span class="letters">DEF</span></button>
+    <button class="key" data-digit aria-label="4"><span class="digit">4</span><span class="letters">GHI</span></button>
+    <button class="key" data-digit aria-label="5"><span class="digit">5</span><span class="letters">JKL</span></button>
+    <button class="key" data-digit aria-label="6"><span class="digit">6</span><span class="letters">MNO</span></button>
+    <button class="key" data-digit aria-label="7"><span class="digit">7</span><span class="letters">PQRS</span></button>
+    <button class="key" data-digit aria-label="8"><span class="digit">8</span><span class="letters">TUV</span></button>
+    <button class="key" data-digit aria-label="9"><span class="digit">9</span><span class="letters">WXYZ</span></button>
+    <button class="key zero" data-digit aria-label="0"><span class="digit">0</span></button>
+    <button class="action" id="reset">Reset</button>
+    <button class="action backspace" id="backspace" aria-label="Delete last digit">⌫</button>
+  </div>
+</main>
+<section class="home-screen" aria-label="Home Screen reveal" hidden>
+  <h1 class="unlocked-title">Unlocked</h1>
+  <button class="home-replay" type="button">Replay</button>
+</section>
+<script>
+  const dots = document.querySelectorAll('.dot');
+  const status = document.querySelector('.status');
+  const title = document.querySelector('#passcode-title');
+  const phone = document.querySelector('.phone');
+  const home = document.querySelector('.home-screen');
+  const replay = document.querySelector('.home-replay');
+  let count = 0;
+  let attempts = 0;
+  const unlockAttempt = 3;
+
+  function render(message) {
+    dots.forEach((dot, index) => dot.classList.toggle('filled', index < count));
+    status.textContent = message;
+  }
+
+  function enterDigit() {
+    if (attempts === unlockAttempt) return;
+    count += 1;
+    if (count < dots.length) {
+      render(count + ' of ' + dots.length + ' digits entered');
+      return;
+    }
+
+    attempts += 1;
+    if (attempts === unlockAttempt) {
+      title.textContent = 'Unlocked';
+      render('Demo unlocked');
+      phone.hidden = true;
+      home.hidden = false;
+      replay.focus({ preventScroll: true });
+      return;
+    }
+
+    count = 0;
+    render('Incorrect passcode. Try again.');
+  }
+
+  function backspace() {
+    if (count === 0 || attempts === unlockAttempt) return;
+    count -= 1;
+    render(count + ' of ' + dots.length + ' digits entered');
+  }
+
+  function reset() {
+    if (attempts === unlockAttempt) {
+      attempts = 0;
+      title.textContent = 'Enter Passcode';
+      home.hidden = true;
+      phone.hidden = false;
+      document.querySelector('[data-digit]').focus({ preventScroll: true });
+    }
+    count = 0;
+    render('Passcode cleared');
+  }
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const pressAnimations = new WeakMap();
+  const keypadButtons = new Map();
+
+  function bindKey(button, key, action) {
+    keypadButtons.set(key, button);
+    const light = document.createElement('span');
+    light.className = 'key-light';
+    light.setAttribute('aria-hidden', 'true');
+    button.append(light);
+    let lightAnimation;
+
+    button.addEventListener('pointerdown', event => {
+      pressAnimations.get(button)?.cancel();
+      lightAnimation?.cancel();
+      const bounds = button.getBoundingClientRect();
+      light.style.setProperty('--light-x', (event.clientX - bounds.left) / bounds.width * 100 + '%');
+      light.style.setProperty('--light-y', (event.clientY - bounds.top) / bounds.height * 100 + '%');
+    });
+    button.addEventListener('click', event => {
+      action();
+      if (event.detail !== 0) return;
+      lightAnimation?.cancel();
+      light.style.removeProperty('--light-x');
+      light.style.removeProperty('--light-y');
+      lightAnimation = light.animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: reducedMotion.matches ? 90 : 300,
+        easing: 'ease-out'
+      });
+      pressAnimations.get(button)?.cancel();
+      const pressed = { backgroundColor: button.matches('.key') ? '#ffffff59' : '#ffffff26' };
+      const style = getComputedStyle(button);
+      const released = { backgroundColor: style.backgroundColor };
+      if (!reducedMotion.matches) {
+        pressed.transform = 'scale(.9)';
+        released.transform = 'scale(1)';
+      }
+      pressAnimations.set(button, button.animate([pressed, released], {
+        duration: reducedMotion.matches ? 90 : 320,
+        easing: reducedMotion.matches ? 'ease-out' : style.getPropertyValue('--key-release-easing').trim()
+      }));
+    });
+  }
+
+  document.querySelectorAll('[data-digit]').forEach(button => {
+    bindKey(button, button.getAttribute('aria-label'), enterDigit);
+  });
+  bindKey(document.querySelector('#backspace'), 'Backspace', backspace);
+  bindKey(document.querySelector('#reset'), 'Escape', reset);
+  replay.addEventListener('click', reset);
+  document.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!home.hidden) {
+      if (event.key === 'Escape') reset();
+      return;
+    }
+    const button = keypadButtons.get(event.key);
+    if (!button) return;
+    event.preventDefault();
+    button.click();
+  });
+</script>
+</body>
+</html>
