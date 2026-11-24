@@ -198,7 +198,6 @@
     border-radius: 20px;
   }
   .peek-dialog::backdrop { background: #0009; }
-  .peek-dialog form { display: grid; gap: 8px; margin: 16px 0; }
   .peek-dialog input, .peek-dialog button { min-height: 44px; }
   .peek-dialog output { display: block; margin: 12px 0; }
   .peek-taps { font-size: 1.5rem; overflow-wrap: anywhere; }
@@ -223,11 +222,6 @@
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
-  }
-  #peek-room {
-    -webkit-touch-callout: default;
-    -webkit-user-select: text;
-    user-select: text;
   }
 </style>
 </head>
@@ -267,11 +261,7 @@
   <h2 id="peek-title">Peek Mode</h2>
   <p>Use made-up numbers only. While sharing is on, every number pressed on Phone 1 is sent to Phone 2.</p>
   <button id="peek-host" type="button">Start sharing keypad taps</button>
-  <form id="peek-join">
-    <label for="peek-room">Pairing code from Phone 1</label>
-    <input id="peek-room" required pattern="[a-fA-F0-9]{12}" maxlength="12" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <button type="submit">Join as Phone 2</button>
-  </form>
+  <button id="peek-share" type="button" hidden>Send join link</button>
   <output class="peek-status" role="status"></output>
   <output class="peek-taps" aria-label="Latest demo keypad taps"></output>
   <button id="peek-close" type="button">Close</button>
@@ -393,7 +383,9 @@
   const peek = document.querySelector('.peek-dialog');
   const peekOpen = document.querySelector('#peek-open');
   const peekHost = document.querySelector('#peek-host');
-  const peekJoin = document.querySelector('#peek-join');
+  const peekShare = document.querySelector('#peek-share');
+  const inviteRoom = /^#join=([a-f0-9]{12})$/.exec(location.hash)?.[1];
+  peekHost.hidden = Boolean(inviteRoom);
   const peekStatus = document.querySelector('.peek-status');
   const peekTaps = document.querySelector('.peek-taps');
   const sharingDot = document.querySelector('.sharing-dot');
@@ -426,6 +418,7 @@
     if (!current || current.stopping) return;
     current.stopping = true;
     showSharing(false);
+    peekShare.hidden = true;
     peekTaps.textContent = '';
     peekStatus.textContent = 'Sharing stopped.';
     current.off.forEach(off => off());
@@ -436,7 +429,6 @@
     } finally {
       session = undefined;
       peekHost.disabled = false;
-      peekJoin.querySelector('button').disabled = false;
     }
   }
 
@@ -445,9 +437,11 @@
     const current = { role, peer: undefined, off: [], stopping: false };
     session = current;
     peekHost.disabled = true;
-    peekJoin.querySelector('button').disabled = true;
     peekTaps.textContent = '';
-    const pairing = role === 'host' ? 'Pairing code: ' + room : 'Looking for Phone 1…';
+    const pairing = role === 'host'
+      ? 'Send the join link to Phone 2 and open it in Aura Browser.'
+      : 'Looking for Phone 1…';
+    current.room = room;
     peekStatus.textContent = pairing;
     try {
       const kit = await loadAuraKit();
@@ -473,6 +467,7 @@
         current.peer = peer;
         peekStatus.textContent = role === 'host' ? 'Sharing demo taps.' : 'Connected to Phone 1.';
         if (role === 'host') {
+          peekShare.hidden = true;
           showSharing(true);
           peek.close();
         }
@@ -488,6 +483,9 @@
         }));
       }
       await link.start();
+      if (session === current && !current.stopping && role === 'host' && !current.peer) {
+        peekShare.hidden = false;
+      }
     } catch (error) {
       if (session !== current || current.stopping) return;
       await stopPeek();
@@ -507,18 +505,37 @@
   }
 
   function openPeek() {
-    if (!peek.open && sharingDot.hidden) peek.showModal();
+    if (!peek.open && sharingDot.hidden) {
+      peek.showModal();
+      if (inviteRoom) void startPeek('guest', inviteRoom);
+    }
   }
 
   peekOpen.addEventListener('click', openPeek);
+  if (inviteRoom) peekOpen.textContent = 'Join Phone 1';
   peekHost.addEventListener('click', () => {
     const room = Array.from(crypto.getRandomValues(new Uint8Array(6)),
       byte => byte.toString(16).padStart(2, '0')).join('');
     void startPeek('host', room);
   });
-  peekJoin.addEventListener('submit', event => {
-    event.preventDefault();
-    void startPeek('guest', document.querySelector('#peek-room').value.toLowerCase());
+  peekShare.addEventListener('click', async () => {
+    const current = session;
+    if (!current || current.stopping || current.role !== 'host') return;
+    const invite = new URL(location.href);
+    invite.search = '';
+    invite.hash = 'join=' + current.room;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Unlock App join link', url: invite.href });
+      } else {
+        await navigator.clipboard.writeText(invite.href);
+        if (session === current && !current.peer) peekStatus.textContent = 'Link copied. Open it on Phone 2 in Aura Browser.';
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError' && session === current && !current.peer) {
+        peekStatus.textContent = 'Could not share the link. Try again in Aura Browser.';
+      }
+    }
   });
   document.querySelector('#peek-close').addEventListener('click', () => peek.close());
   peek.addEventListener('close', () => {
@@ -609,6 +626,7 @@
     event.preventDefault();
     button.click();
   });
+  if (inviteRoom) openPeek();
 </script>
 </body>
 </html>
